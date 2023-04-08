@@ -1,244 +1,233 @@
-package contacts
+package contacts.Contacts
 
+import com.squareup.moshi.*
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
-import com.squareup.moshi.*
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-// import kotlinx.datetime.*
+import java.io.File
 
-val phBook = mutableListOf<Record>()
+class LocalDateTimeAdapter : JsonAdapter<LocalDateTime>(){
+    override fun toJson(writer: JsonWriter, value: LocalDateTime?) {
+        value?.let { writer?.value(it.format(formatter)) }
+
+    }
+
+    override fun fromJson(reader: JsonReader): LocalDateTime? {
+        return if (reader.peek() != JsonReader.Token.NULL) {
+            fromNonNullString(reader.nextString())
+        } else {
+            reader.nextNull<Any>()
+            null
+        }    }
+
+    private val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")
+    private fun fromNonNullString(nextString: String) : LocalDateTime = LocalDateTime.parse(nextString, formatter)
+
+}
+
+class LocalDateAdapter : JsonAdapter<LocalDate>(){
+    override fun toJson(writer: JsonWriter, value: LocalDate?) {
+        value?.let { writer?.value(it.format(formatter)) }
+    }
+
+    override fun fromJson(reader: JsonReader): LocalDate? {
+        return if (reader.peek() != JsonReader.Token.NULL) {
+            fromNonNullString(reader.nextString())
+        } else {
+            reader.nextNull<Any>()
+            null
+        }
+    }
+    private val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+    private fun fromNonNullString(nextString: String) : LocalDate = LocalDate.parse(nextString, formatter)
+
+}
+
 val moshi = Moshi.Builder()
     .add(KotlinJsonAdapterFactory())
+    .add(LocalDateTime::class.java, LocalDateTimeAdapter().nullSafe())
+    .add(LocalDate::class.java, LocalDateAdapter().nullSafe())
     .build()
 
+val recAdapter = moshi.adapter(Contact::class.java)
+val type = Types.newParameterizedType(List::class.java, Contact::class.java)
+val recListAdapter = moshi.adapter<MutableList<Contact?>>(type)
+
 class CLException(s: String): Exception(s)
+const val WR_INP = "Wrong input!"
+const val EMPTY_LIST = "The list is empty."
 
-fun main() {
+var phBook = mutableListOf<Contact>()
 
+fun main(args: Array<String>) {
+
+    // if there's input argument read-write file
+    val isFile: Boolean
+    if (args.size > 0) {
+        isFile = true
+        val file = File(args[0])
+        if (file.exists()) {
+            val readFile = file.readText()
+            val dbFromJson = recListAdapter.fromJson(readFile)
+            if (dbFromJson != null) {
+                for (rec in dbFromJson) {
+                    if (rec != null) {
+                        phBook.add(rec)
+                    }
+                }
+            }
+            println("open ${args[0]}\n")
+
+        }
+    } else isFile = false
+
+    // main menu
     do {
-        print("Enter action (add, remove, edit, count, info, exit): ")
+        print("[menu] Enter action (add, list, search, count, exit): ")
         try {
             when (readln()) {
-                "count" -> count()
-                "edit" -> edit()
-                "remove" -> remove()
                 "add" -> add()
-                "info" -> info()
+                "list" -> list()
+                "search" -> search()
+                "count" -> count()
                 "exit" -> break
             }
         } catch (e: CLException) {
-            println(e)
+            println(e.message)
         }
         println("")
     } while (true)
-}
 
-fun edit() {
-    if (phBook.size == 0) println("No records to edit!")
-    else {
-        list()
-        print("Select a record: ")
-        val indx = getIndex()
-        if (phBook[indx].isPerson) editPerson(indx)
-        else editOrganization(indx)
-        println("The record updated!")
+    // write file if there was an argument
+    if (isFile) {
+        val file = File(args[0])
+        file.writeText(recListAdapter.toJson(phBook as MutableList<Contact?>))
     }
 }
 
-fun editPerson(indx: Int) {
-    print("Select a field (name, surname, birth, gender, number): ")
-    when (readln()) {
-        "number" -> {
-            print("Enter number: ")
-            phBook[indx].setNumber(readln())
-        }
-        "name" -> {
-            print("Enter name: ")
-            phBook[indx].name = readln()
-        }
-        "surname" -> {
-            print("Enter surname: ")
-            phBook[indx].surname = readln()
-        }
-        "birth" -> {
-            print("Enter the birth date: ")
-            phBook[indx].bDay = try {
-                LocalDate.parse(readln())
-            } catch (e: DateTimeParseException) {
-                println("Bad birth date!")
-                null
-            }
-        }
-        "gender" -> {
-            phBook[indx].gender = when (readln()) {
-                "M" -> "M"
-                "F" -> "F"
-                else -> {
-                    println("Bad gender!")
-                    "[no data]"
-                }
-            }
-        }
-        else -> {
-            println("Wrong input!")
-            return
-        }
-    }
-}
-
-fun editOrganization(indx: Int) {
-    print("Select a field (address, number): ")
-    when (readln()) {
-        "number" -> {
-            print("Enter number: ")
-            phBook[indx].setNumber(readln())
-        }
-        "address" -> {
-            print("Enter the address: ")
-            phBook[indx].address = readln()
-        }
-    }
-}
-
-private fun getIndex(): Int {
-    val indx: Int
+fun list() {
+    if (phBook.isEmpty()) throw CLException(EMPTY_LIST)
+    printList(phBook)
+    print("\n[list] Enter action ([number], back): ")
+    val inp = readln()
+    if (inp.equals("back")) return
+    val i: Int
     try {
-        indx = readln().toInt() - 1
+        i = inp.toInt()
     } catch (e: NumberFormatException) {
-        throw CLException("Wrong input!")
+        throw CLException(WR_INP)
     }
-    if (indx !in 0..phBook.lastIndex) {
-        throw CLException("Wrong input!")
+    if (i <= 0 || i > phBook.size) throw CLException(WR_INP)
+
+    editRecord(phBook[i-1])
+}
+fun printList(list: MutableList<Contact>) {
+    for (i in 0..list.lastIndex) {
+        println("${i+1}. ${list[i].getInfo()}")
     }
-    return indx
+}
+
+fun editRecord(rec: Contact) {
+    while (true) {
+        rec.printFullInfo()
+        print("\n[record] Enter action (edit, delete, menu): ")
+        when (readln()) {
+            "edit" -> editRec(rec)
+            "delete" -> {
+                phBook.remove(rec)
+                println("The record removed!")
+            }
+            "menu" -> return
+            else -> throw CLException(WR_INP)
+        }
+    }
+}
+
+fun editRec(rec: Contact) {
+    print("Select a field (" + rec.properties()[0])
+    for (i in 1..rec.properties().lastIndex) print(", " + rec.properties()[i])
+    print("): ")
+    val prop = readln()
+    if (!rec.properties().contains(prop)) throw CLException(WR_INP)
+    print("Enter " + prop + ": ")
+    val value = readln()
+    rec.setProperty(prop + rec.splitter + value)
+    println("Saved")
 }
 
 fun count() {
     println("The Phone Book has ${phBook.size} records.")
 }
 
-fun remove() {
-    if (phBook.size == 0) println("No records to remove!")
-    else {
-        list()
-        phBook.removeAt(getIndex())
-    }
-    println("The record removed!")
-}
-
 fun add() {
 
-    print("Enter the type (person, organization): ")
-    when (readln()) {
-        "person" -> addPerson()
-        "organization" -> addOrganization()
-        else -> throw CLException("Wrong input!")
+    print("\n[add] Enter the type (person, organization): ")
+    val rec = when (readln()) {
+        "person" -> Contact(true)
+        "organization" -> Contact(false)
+        else -> throw CLException(WR_INP)
     }
 
+    for (prop in rec.properties()) {
+        print("Enter " + prop + ": ")
+        rec.setProperty(prop + rec.splitter + readln())
+    }
+
+    phBook.add(rec)
     println("The record added.")
 }
 
-fun addPerson() {
-    print("Enter the name: ")
-    val name = readln()
-    print("Enter the surname: ")
-    val surname = readln()
-    print("Enter the birth date: ")
-    val bDay = try {
-        LocalDate.parse(readln())
-    } catch (e: DateTimeParseException) {
-        println("Bad birth date!")
-        null
-    }
-    print("Enter the gender (M, F): ")
-    val gender = when (readln()) {
-        "M" -> "M"
-        "F" -> "F"
-        else -> {
-            println("Bad gender!")
-            "[no data]"
+fun search() {
+    while (true) {
+        print("Enter search query: ")
+        val word = readln()
+        val searchRes = mutableListOf<Contact>()
+        for (rec in phBook) {
+            if (rec.contain(word)) searchRes.add(rec)
         }
-    }
-    print("Enter the number: ")
-    val number = readln()
-    val person = Person(name, surname, number, bDay, gender)
-    phBook.add(person)
-}
+        printList(searchRes)
+        print("\n[search] Enter action ([number], back, again): ")
+        val inp = readln()
+        if (inp.equals("back")) return
+        if (inp.equals("again")) continue
+        val i: Int
+        try {
+            i = inp.toInt()
+        } catch (e: NumberFormatException) {
+            throw CLException(WR_INP)
+        }
+        if (i <= 0 || i > searchRes.size) throw CLException(WR_INP)
 
-fun addOrganization() {
-    print("Enter the organization name: ")
-    val nameOrg = readln()
-    print("Enter the address: ")
-    val address = readln()
-    print("Enter the number: ")
-    val number = readln()
-    phBook.add(Organization(nameOrg, address, number))
-}
-
-fun list() {
-    for (i in 0..phBook.lastIndex) {
-        println("${i+1}. ${phBook[i].getInfo()}")
+        editRecord(searchRes[i-1])
+        return
     }
 }
 
-fun info() {
-    list()
-    print("Enter index to show info: ")
-    val indx = getIndex()
-    phBook[indx].printFullInfo()
-}
 
-open class Record(val isPerson: Boolean) {
-    private val dateCreate: LocalDateTime
-    private var dateEdit: LocalDateTime
+class Contact(val isPerson: Boolean) {
+    private var timeCreate: LocalDateTime
+    private var timeEdit: LocalDateTime
     init {
-        dateCreate = LocalDateTime.now()
-        dateEdit = LocalDateTime.now()
+        timeCreate = LocalDateTime.now()
+        timeEdit = LocalDateTime.now()
     }
+
+    val splitter = "%$%"
     var name = ""
-        set(value) {
-            dateEdit = LocalDateTime.now()
-            field = value
-        }
     var surname = ""
-        set(value) {
-            dateEdit = LocalDateTime.now()
-            field = value
-        }
-
-    var bDay: LocalDate? = null
-        set(value) {
-            dateEdit = LocalDateTime.now()
-            field = value
-        }
-
+    var birth: LocalDate? = null
     var gender = "[no data]"
-        set(value) {
-            dateEdit = LocalDateTime.now()
-            field = value
-        }
-
-    var nameOrg = ""
-        set(value) {
-            dateEdit = LocalDateTime.now()
-            field = value
-        }
-
     var address = ""
-        set(value) {
-            dateEdit = LocalDateTime.now()
-            field = value
-        }
 
 
-    private var phone: String? = null
-        get() {
+    private var phNumber: String? = null
+        private get() {
             return field
         }
-        set(str) {
-            dateEdit = LocalDateTime.now()
+        private set(str) {
+            timeEdit = LocalDateTime.now()
             field = if (correctNumberFormat(str!!)) str
             else {
                 println("Wrong number format!")
@@ -246,25 +235,75 @@ open class Record(val isPerson: Boolean) {
             }
         }
 
-    public val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")
+    protected val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")
 
+    fun properties(): List<String> {
+        return if (this.isPerson) listOf("name", "surname", "birth", "gender", "number")
+        else listOf("name", "address", "number")
+    }
+
+    fun setProperty(str: String) {
+        val splitStr = str.split(this.splitter)
+
+        if (splitStr.size != 2) throw CLException(WR_INP)
+
+        if ( !this.properties().contains(splitStr[0]) ) throw CLException(WR_INP)
+
+        when (splitStr[0]) {
+            "name" -> this.name = splitStr[1]
+            "surname" -> this.surname = splitStr[1]
+            "birth" -> this.birth = try {
+                LocalDate.parse(splitStr[1])
+            } catch (e: DateTimeParseException) {
+                println("Bad birth date!")
+                null
+            }
+            "gender" -> {
+                this.gender = when (splitStr[1]) {
+                    "M" -> "M"
+                    "F" -> "F"
+                    else -> {
+                        println("Bad gender!")
+                        "[no data]"
+                    }
+                }
+            }
+            "number" -> this.setNumber(splitStr[1])
+            "address" -> this.address = splitStr[1]
+        }
+        this.timeEdit = LocalDateTime.now()
+    }
+
+    fun getProperty(str: String) : String {
+        if ( !this.properties().contains(str) ) throw CLException(WR_INP)
+
+        return when (str) {
+            "name" -> this.name
+            "surname" -> this.surname
+            "birth" -> this.birth?.toString() ?: "[no data]"
+            "gender" -> this.gender
+            "address" -> this.address
+            "number" -> this.getNumber() ?: "[no data]"
+            else -> throw CLException(WR_INP)
+        }
+    }
     fun setNumber(str: String) {
-        this.phone = str
+        this.phNumber = str
     }
     fun getNumber(): String? {
-        return this.phone
+        return this.phNumber
     }
-
     fun getDateCreate(): LocalDateTime {
-        return this.dateCreate
+        return this.timeCreate
     }
 
     fun getDateEdit(): LocalDateTime {
-        return this.dateEdit
+        return this.timeEdit
     }
     private fun correctNumberFormat(str: String): Boolean {
         //val pnFormat = Regex(pattern = """\+?(\(?[\da-zA-Z]+\)?)?([ -]\(?[\da-zA-Z]{2,}\)?)?([ -][\da-zA-Z]{2,})*""")
         //val pnFormat = Regex(pattern = "\\+?(\\(?[0-9a-zA-Z]+\\)?)?([ -]\\(?[0-9a-zA-Z]+\\)?)?([ -][0-9a-zA-Z]{2,})*")
+        if (str.length == 0) return false
         val nLeftPar = str.filter { it == '(' }.count()
         val nRightPar = str.filter { it == ')' }.count()
         if (nLeftPar != nRightPar || nLeftPar > 1) return false
@@ -290,60 +329,29 @@ open class Record(val isPerson: Boolean) {
         return true
     }
 
-    fun hasNumber(): Boolean {
-        return this.phone != null
+    fun hasNumber(): Boolean = this.phNumber != null
+
+    fun getInfo(): String {
+        return if (this.isPerson) this.name + " " + this.surname
+        else this.name
     }
 
-    open fun getInfo(): String {
-        return ""
-    }
+     fun contain( str: String): Boolean {
+         val searchFields = this.name + " " + this.surname + " " + this.address +
+                            " " + this.getNumber()
+         return searchFields.contains(str, true)
+     }
 
-    open fun printFullInfo() {
-
-    }
-}
-
-
-class Person( name: String, surname: String, phone: String, bDay: LocalDate?, gender: String ) : Record(true) {
-    init {
-        super.setNumber(phone)
-        super.name = name
-        super.surname = surname
-        super.bDay = bDay
-        super.gender = gender
-    }
-
-
-
-    override fun getInfo(): String {
-        return this.name + " " + this.surname
-    }
-
-    override fun printFullInfo() {
-        println("Name: ${super.name}")
-        println("Surname: ${super.surname}")
-        println("Birth date: ${this.bDay ?: "[no data]"}")
-        println("Gender: ${this.gender}")
-        println("Number: ${this.getNumber() ?: "[no data]"}")
-        println("Time created: ${this.getDateCreate().format(formatter)}")
-        println("Time last edit: ${this.getDateEdit().format(formatter)}")
-    }
-}
-
-class Organization( nameOrg: String, address: String, phone: String ) : Record(false) {
-    init {
-        super.setNumber(phone)
-        super.nameOrg = nameOrg
-        super.address = address
-    }
-
-    override fun getInfo(): String {
-        return this.nameOrg
-    }
-
-    override fun printFullInfo() {
-        println("Organization name: ${this.nameOrg}")
-        println("Address: ${this.address}")
+    fun printFullInfo() {
+        if (this.isPerson) {
+            println("Name: ${this.name}")
+            println("Surname: ${this.surname}")
+            println("Birth date: ${this.birth ?: "[no data]"}")
+            println("Gender: ${this.gender}")
+        } else {
+            println("Organization name: ${this.name}")
+            println("Address: ${this.address}")
+        }
         println("Number: ${this.getNumber() ?: "[no data]"}")
         println("Time created: ${this.getDateCreate().format(formatter)}")
         println("Time last edit: ${this.getDateEdit().format(formatter)}")

@@ -359,5 +359,9 @@ files:
     \ \"Can't check the answer\");\n        }\n    }\n}\n"
   learner_created: false
 feedback_link: https://hyperskill.org/learn/step/20391#comment
-status: Unchecked
+status: Solved
+feedback:
+  message: Well done! You've finished the project. Select a new project on <a href="https://hyperskill.org/projects">Hyperskill</a>
+    to continue learning.
+  time: "Sat, 08 Apr 2023 21:28:23 UTC"
 record: -1

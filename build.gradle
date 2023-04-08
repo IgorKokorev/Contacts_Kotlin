@@ -73,6 +73,7 @@ configure(subprojects.findAll {it.name != 'util'}) {
     dependencies {
         testImplementation project(':util').sourceSets.main.output
         testImplementation project(':util').sourceSets.test.output
+        implementation 'com.squareup.moshi:moshi-kotlin:1.14.0'
     }
 }
 

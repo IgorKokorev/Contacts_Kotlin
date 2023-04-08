@@ -16,7 +16,7 @@ stages:
   is_completed: true
 - id: 1324
   step: 20391
-  is_completed: false
+  is_completed: true
 topics:
   0:
   - title: Binary numbers
